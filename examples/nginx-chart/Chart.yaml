@@ -1,0 +1,15 @@
+name: nginx
+description: Example nginx chart
+version: 0.1.0
+kubeVersion: ">=1.2.0"
+keywords:
+  - http
+  - nginx
+  - www
+  - web
+home: https://github.com/dennor/velero-plugin-helm
+sources:
+  - https://github.com/dennor/velero-plugin-helm/examples/nginx-chart
+maintainers:
+  - name: Dennor
+    email: kamil@aexol.com

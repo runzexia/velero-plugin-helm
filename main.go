@@ -17,32 +17,16 @@ limitations under the License.
 package main
 
 import (
-	"github.com/sirupsen/logrus"
-	"github.com/vmware-tanzu/velero-plugin-example/internal/plugin"
+	"github.com/runzexia/velero-plugin-helm/pkg/plugin"
+	"github.com/vmware-tanzu/velero/pkg/client"
 	"github.com/vmware-tanzu/velero/pkg/plugin/framework"
 )
 
 func main() {
-	framework.NewServer().
-		RegisterObjectStore("example.io/object-store-plugin", newObjectStorePlugin).
-		RegisterVolumeSnapshotter("example.io/volume-snapshotter-plugin", newNoOpVolumeSnapshotterPlugin).
-		RegisterRestoreItemAction("example.io/restore-plugin", newRestorePlugin).
-		RegisterBackupItemAction("example.io/backup-plugin", newBackupPlugin).
-		Serve()
-}
-
-func newBackupPlugin(logger logrus.FieldLogger) (interface{}, error) {
-	return plugin.NewBackupPlugin(logger), nil
-}
-
-func newObjectStorePlugin(logger logrus.FieldLogger) (interface{}, error) {
-	return plugin.NewFileObjectStore(logger), nil
-}
-
-func newRestorePlugin(logger logrus.FieldLogger) (interface{}, error) {
-	return plugin.NewRestorePlugin(logger), nil
-}
-
-func newNoOpVolumeSnapshotterPlugin(logger logrus.FieldLogger) (interface{}, error) {
-	return plugin.NewNoOpVolumeSnapshotter(logger), nil
+	f := client.NewFactory("velero-plugin-helm", client.VeleroConfig{})
+	srv := framework.NewServer()
+	for _, resource := range []string{"configmaps", "secrets"} {
+		srv.RegisterBackupItemAction("velero-plugin-helm/"+resource, plugin.NewBackupPlugin(f, resource))
+	}
+	srv.Serve()
 }
