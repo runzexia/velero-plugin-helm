@@ -13,7 +13,6 @@
 # limitations under the License.
 
 FROM golang:1.14-buster AS build
-ENV GOPROXY=https://goproxy.cn
 WORKDIR /go/src/github.com/runzexia/velero-plugin-helm
 COPY . .
 RUN CGO_ENABLED=0 go build -o /go/bin/velero-plugin-helm .
