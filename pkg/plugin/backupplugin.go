@@ -183,41 +183,36 @@ type releaseBackup struct {
 }
 
 func (r *releaseBackup) runReleaseBackup() ([]velero.ResourceIdentifier, error) {
-	release, err := r.driver.Get(r.metadata.GetName())
+	relVer, err := r.driver.Get(r.metadata.GetName())
 	if err != nil {
 		return nil, err
 	}
-	r.release = release
-	releaseVersions, err := r.driver.List(filterReleaseName(release.GetName()))
-	if err != nil {
-		return nil, err
-	}
+	r.release = relVer
+
 	resources := make([]velero.ResourceIdentifier, 0)
-	// Backup all release revisions
-	for _, relVer := range releaseVersions {
-		// Only backup resources for releases that are deployed
-		if relVer.GetInfo().GetStatus().GetCode() == rspb.Status_DEPLOYED {
-			for _, hook := range relVer.GetHooks() {
-				hookResources, err := r.hookResources(hook)
-				if err != nil {
-					return nil, err
-				}
-				resources = append(resources, hookResources...)
-			}
-			releaseResources, err := r.fromManifest(relVer.GetManifest())
+
+	// Only backup resources for releases that are deployed
+	if relVer.GetInfo().GetStatus().GetCode() == rspb.Status_DEPLOYED {
+		for _, hook := range relVer.GetHooks() {
+			hookResources, err := r.hookResources(hook)
 			if err != nil {
 				return nil, err
 			}
-			resources = append(resources, releaseResources...)
+			resources = append(resources, hookResources...)
 		}
-		resources = append(resources, velero.ResourceIdentifier{
-			GroupResource: schema.GroupResource{
-				Resource: r.driver.Name(),
-			},
-			Namespace: r.metadata.GetNamespace(),
-			Name:      relVer.GetName() + "." + "v" + strconv.FormatInt(int64(relVer.GetVersion()), 10),
-		})
+		releaseResources, err := r.fromManifest(relVer.GetManifest())
+		if err != nil {
+			return nil, err
+		}
+		resources = append(resources, releaseResources...)
 	}
+	resources = append(resources, velero.ResourceIdentifier{
+		GroupResource: schema.GroupResource{
+			Resource: r.driver.Name(),
+		},
+		Namespace: r.metadata.GetNamespace(),
+		Name:      relVer.GetName() + "." + "v" + strconv.FormatInt(int64(relVer.GetVersion()), 10),
+	})
 
 	return resources, nil
 }
