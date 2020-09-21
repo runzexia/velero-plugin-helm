@@ -17,16 +17,12 @@ limitations under the License.
 package plugin
 
 import (
-	"fmt"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/velero/pkg/client"
 	vdiscvoery "github.com/vmware-tanzu/velero/pkg/discovery"
 	"gopkg.in/yaml.v2"
 	"io"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/restmapper"
 	storage "k8s.io/helm/pkg/storage/driver"
 	"strconv"
 	"strings"
@@ -34,7 +30,6 @@ import (
 	v1 "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	clientset "github.com/vmware-tanzu/velero/pkg/generated/clientset/versioned"
 	"github.com/vmware-tanzu/velero/pkg/plugin/velero"
-	kcmdutil "github.com/vmware-tanzu/velero/third_party/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -108,7 +103,7 @@ func (r *releaseBackup) fromManifest(manifestString string) ([]velero.ResourceId
 		if err != nil {
 			return nil, err
 		}
-		gvr, apiResource, err := r.ResourceFor(gv.WithKind(m.Kind))
+		gvr, apiResource, err := r.dHelper.KindFor(gv.WithKind(m.Kind))
 		if err != nil {
 			return nil, err
 		}
@@ -125,11 +120,6 @@ func (r *releaseBackup) fromManifest(manifestString string) ([]velero.ResourceId
 	return resources, nil
 }
 
-func filterReleaseName(releaseName string) func(rls *rspb.Release) bool {
-	return func(rls *rspb.Release) bool {
-		return rls.GetName() == releaseName
-	}
-}
 
 func (r *releaseBackup) hookResources(hook *rspb.Hook) ([]velero.ResourceIdentifier, error) {
 	// Hook never ran, skip it
@@ -149,35 +139,10 @@ func (r *releaseBackup) hookResources(hook *rspb.Hook) ([]velero.ResourceIdentif
 	return r.fromManifest(hook.GetManifest())
 }
 
-func (r *releaseBackup) ResourceFor(gvk schema.GroupVersionKind) (schema.GroupVersionResource, metav1.APIResource, error) {
-	if resource, ok := r.resourcesMap[gvk]; ok {
-		return schema.GroupVersionResource{
-			Group:    gvk.Group,
-			Version:  gvk.Version,
-			Resource: resource.Name,
-		}, resource, nil
-	}
-	m, err := r.mapper.RESTMapping(schema.GroupKind{Group: gvk.Group, Kind: gvk.Kind}, gvk.Version)
-	if err != nil {
-		return schema.GroupVersionResource{}, metav1.APIResource{}, err
-	}
-	if resource, ok := r.resourcesMap[m.GroupVersionKind]; ok {
-		return schema.GroupVersionResource{
-			Group:    gvk.Group,
-			Version:  gvk.Version,
-			Resource: resource.Name,
-		}, resource, nil
-	}
-	return schema.GroupVersionResource{}, metav1.APIResource{}, errors.WithStack(fmt.Errorf("APIResource for %v not found", gvk))
-}
-
 type releaseBackup struct {
 	metadata     metav1.Object
 	log          logrus.FieldLogger
 	driver       storage.Driver
-	resourcesMap map[schema.GroupVersionKind]metav1.APIResource
-	mapper       meta.RESTMapper
-	resources    []*metav1.APIResourceList
 	release      *rspb.Release
 	dHelper      vdiscvoery.Helper
 }
@@ -217,63 +182,20 @@ func (r *releaseBackup) runReleaseBackup() ([]velero.ResourceIdentifier, error) 
 	return resources, nil
 }
 
-// Source: https://github.com/heptio/velero/blob/master/pkg/discovery/helper.go
-func filterByVerbs(groupVersion string, r *metav1.APIResource) bool {
-	return discovery.SupportsAllVerbs{Verbs: []string{"list", "create", "get", "delete"}}.Match(groupVersion, r)
-}
-
-func refreshServerPreferredResources(discoveryClient discovery.DiscoveryInterface, logger logrus.FieldLogger) ([]*metav1.APIResourceList, error) {
-	preferredResources, err := discoveryClient.ServerPreferredResources()
-	if err != nil {
-		if discoveryErr, ok := err.(*discovery.ErrGroupDiscoveryFailed); ok {
-			for groupVersion, err := range discoveryErr.Groups {
-				logger.WithError(err).Warnf("Failed to discover group: %v", groupVersion)
-			}
-			return preferredResources, nil
-		}
-	}
-	return preferredResources, err
-}
 
 func (p *BackupPlugin) getIdentifiers(metadata metav1.Object) ([]velero.ResourceIdentifier, error) {
 	driver := p.storage.Storage(metadata.GetNamespace())
 	discoveryClient := p.clientset.Discovery()
+
+	helper, err := vdiscvoery.NewHelper(discoveryClient,p.log)
+	if err != nil {
+		return nil, err
+	}
 	releaseBackup := releaseBackup{
 		metadata:     metadata,
 		driver:       driver,
 		log:          p.log,
-		resourcesMap: make(map[schema.GroupVersionKind]metav1.APIResource),
-	}
-
-	groupResources, err := restmapper.GetAPIGroupResources(p.clientset.Discovery())
-	if err != nil {
-		return nil, err
-	}
-	mapper := restmapper.NewDiscoveryRESTMapper(groupResources)
-	preferredResources, err := refreshServerPreferredResources(discoveryClient, p.log)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-
-	releaseBackup.resources = discovery.FilteredBy(
-		discovery.ResourcePredicateFunc(filterByVerbs),
-		preferredResources,
-	)
-	shortcutExpander, err := kcmdutil.NewShortcutExpander(mapper, releaseBackup.resources, p.log)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	releaseBackup.mapper = shortcutExpander
-
-	for _, resourceGroup := range releaseBackup.resources {
-		gv, err := schema.ParseGroupVersion(resourceGroup.GroupVersion)
-		if err != nil {
-			return nil, errors.Wrapf(err, "unable to parse GroupVersion %s", resourceGroup.GroupVersion)
-		}
-		for _, resource := range resourceGroup.APIResources {
-			gvk := gv.WithKind(resource.Kind)
-			releaseBackup.resourcesMap[gvk] = resource
-		}
+		dHelper: helper,
 	}
 	return releaseBackup.runReleaseBackup()
 }
