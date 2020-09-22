@@ -2,7 +2,7 @@ name: Main CI
 
 on:
   push:
-    branches: [ master ]
+    branches: [ v2,v3 ]
     tags:
       - '*'
 
@@ -31,5 +31,4 @@ jobs:
       - name: Publish container image
         run: |
           docker login -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_PASSWORD }}
-          make container
-          make push
+          ./hack/docker-push.sh
