@@ -1,6 +1,9 @@
-# Velero Helm Plugin
+# Velero Helm2/3 Plugin
 
 This repository contains velero plugin which can backup helm releases deployed by tiller.
+
+For helm2 please view [v2 branch](https://github.com/runzexia/velero-plugin-helm/tree/v2).  
+For helm3 please view [v3 branch](https://github.com/runzexia/velero-plugin-helm/tree/v3)
 
 This is plugin is fork from https://github.com/Dennor/velero-plugin-helm. But work with velero 1.0.x.
 
@@ -9,7 +12,7 @@ This is plugin is fork from https://github.com/Dennor/velero-plugin-helm. But wo
 To use the plugin just add it to velero.
 
 ```
-$ velero plugin add runzexia/velero-plugin-helm:latest
+$ velero plugin add runzexia/velero-plugin-helm:v3
 ```
 
 ## Example of backup and restore
