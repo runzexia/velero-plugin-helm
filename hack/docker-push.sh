@@ -56,7 +56,7 @@ elif [[ "$triggeredBy" == "tags" ]]; then
     TAG=$(echo $GITHUB_REF | cut -d / -f 3)
 fi
 
-if [[ "$BRANCH" == "v2" ]] || [["$BRANCH" == "v3" ]]; then
+if [[ "$BRANCH" == "v2" ]] || [[ "$BRANCH" == "v3" ]]; then
     VERSION="$BRANCH"
 elif [[ ! -z "$TAG" ]]; then
     # Explicitly checkout tags when building from a git tag.
